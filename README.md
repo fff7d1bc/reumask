@@ -43,4 +43,14 @@ make build
 make static
 make test
 make release
+make install
 ```
+
+`make build` and `make static` write host binaries to `build/bin/host/`.
+
+`make release` writes fully static cross-compiled binaries to `build/bin/release/`.
+
+`make install` installs the host binary:
+
+- as root, it copies it to `/usr/local/bin/reumask`
+- as non-root, it creates or updates `~/.local/bin/reumask` as a symlink to the built binary

@@ -27,7 +27,7 @@ export GOENV
 export GOFLAGS
 export GOTELEMETRY=off
 
-.PHONY: all build static test release run clean
+.PHONY: all build static test release install run clean
 
 all: build
 
@@ -36,6 +36,15 @@ build: $(BIN_DIR)/$(APP)
 static: $(BIN_DIR)/$(STATIC_APP)
 
 release: $(RELEASE_BINS)
+
+install: $(HOST_BIN_DIR)/$(APP)
+	if [ "$$(id -u)" -eq 0 ]; then \
+		install -d "/usr/local/bin"; \
+		install -m 0755 "$(HOST_BIN_DIR)/$(APP)" "/usr/local/bin/$(APP)"; \
+	else \
+		install -d "$$HOME/.local/bin"; \
+		ln -sfn "$(HOST_BIN_DIR)/$(APP)" "$$HOME/.local/bin/$(APP)"; \
+	fi
 
 test: go.mod main.go main_test.go
 	mkdir -p "$(BIN_DIR)" "$(GOCACHE)" "$(GOMODCACHE)" "$(GOPATH)" "$(GOTMPDIR)" "$(GOTELEMETRYDIR)"
