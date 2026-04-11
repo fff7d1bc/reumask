@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -19,6 +20,25 @@ func TestParseUmask(t *testing.T) {
 func TestParseUmaskRejectsInvalidValue(t *testing.T) {
 	if _, err := parseUmask("888"); err == nil {
 		t.Fatal("parseUmask accepted invalid octal input")
+	}
+}
+
+func TestParseArgsDryRun(t *testing.T) {
+	cfg, positional, err := parseArgs([]string{"--dry-run", "022", "path"})
+	if err != nil {
+		t.Fatalf("parseArgs returned error: %v", err)
+	}
+	if !cfg.dryRun {
+		t.Fatal("parseArgs did not enable dry-run")
+	}
+	if len(positional) != 2 || positional[0] != "022" || positional[1] != "path" {
+		t.Fatalf("parseArgs returned unexpected positional args: %#v", positional)
+	}
+}
+
+func TestParseArgsUsageError(t *testing.T) {
+	if _, _, err := parseArgs([]string{"022"}); err == nil || err.Error() != usageText {
+		t.Fatalf("parseArgs returned %v, want %q", err, usageText)
 	}
 }
 
@@ -83,6 +103,25 @@ func TestRunRecursivelyRemasksDirectoryTree(t *testing.T) {
 	}
 }
 
+func TestRunDryRunDoesNotChangePermissions(t *testing.T) {
+	root := t.TempDir()
+	file := filepath.Join(root, "file")
+	if err := os.WriteFile(file, []byte("data"), 0o600); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	output := captureStdout(t, func() {
+		if err := run([]string{"--dry-run", "022", file}); err != nil {
+			t.Fatalf("run returned error: %v", err)
+		}
+	})
+
+	if output == "" {
+		t.Fatal("expected dry-run to print planned change")
+	}
+	assertPerms(t, file, 0o600)
+}
+
 func assertPerms(t *testing.T, path string, want os.FileMode) {
 	t.Helper()
 
@@ -93,4 +132,32 @@ func assertPerms(t *testing.T, path string, want os.FileMode) {
 	if info.Mode().Perm() != want {
 		t.Fatalf("%s has mode %04o, want %04o", path, info.Mode().Perm(), want)
 	}
+}
+
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+
+	original := os.Stdout
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("Pipe failed: %v", err)
+	}
+
+	os.Stdout = writer
+	defer func() {
+		os.Stdout = original
+	}()
+
+	fn()
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+
+	var buf bytes.Buffer
+	if _, err := buf.ReadFrom(reader); err != nil {
+		t.Fatalf("ReadFrom failed: %v", err)
+	}
+
+	return buf.String()
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"flag"
 	"fmt"
 	"io/fs"
 	"os"
@@ -12,7 +13,12 @@ import (
 const (
 	modeReadWrite = 0o666
 	modeAll       = 0o777
+	usageText     = "usage: reumask [--dry-run] <umask> <path>"
 )
+
+type config struct {
+	dryRun bool
+}
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
@@ -22,16 +28,17 @@ func main() {
 }
 
 func run(args []string) error {
-	if len(args) != 2 {
-		return errors.New("usage: reumask <umask> <path>")
-	}
-
-	umask, err := parseUmask(args[0])
+	cfg, positional, err := parseArgs(args)
 	if err != nil {
 		return err
 	}
 
-	info, err := os.Lstat(args[1])
+	umask, err := parseUmask(positional[0])
+	if err != nil {
+		return err
+	}
+
+	info, err := os.Lstat(positional[1])
 	if err != nil {
 		return err
 	}
@@ -41,15 +48,32 @@ func run(args []string) error {
 	}
 
 	if info.IsDir() {
-		return filepath.WalkDir(args[1], func(path string, d fs.DirEntry, walkErr error) error {
+		return filepath.WalkDir(positional[1], func(path string, d fs.DirEntry, walkErr error) error {
 			if walkErr != nil {
 				return walkErr
 			}
-			return applyUmask(path, d.Type(), umask)
+			return applyUmask(path, d.Type(), umask, cfg)
 		})
 	}
 
-	return applyUmask(args[1], info.Mode(), umask)
+	return applyUmask(positional[1], info.Mode(), umask, cfg)
+}
+
+func parseArgs(args []string) (config, []string, error) {
+	var cfg config
+
+	fs := flag.NewFlagSet("reumask", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	fs.BoolVar(&cfg.dryRun, "dry-run", false, "print changes without applying them")
+
+	if err := fs.Parse(args); err != nil {
+		return config{}, nil, err
+	}
+	if fs.NArg() != 2 {
+		return config{}, nil, errors.New(usageText)
+	}
+
+	return cfg, fs.Args(), nil
 }
 
 func parseUmask(raw string) (fs.FileMode, error) {
@@ -64,7 +88,7 @@ func parseUmask(raw string) (fs.FileMode, error) {
 	return fs.FileMode(value), nil
 }
 
-func applyUmask(path string, mode fs.FileMode, umask fs.FileMode) error {
+func applyUmask(path string, mode fs.FileMode, umask fs.FileMode, cfg config) error {
 	if mode&os.ModeSymlink != 0 {
 		return nil
 	}
@@ -82,6 +106,9 @@ func applyUmask(path string, mode fs.FileMode, umask fs.FileMode) error {
 	}
 
 	fmt.Printf("[%s -> %s] %s\n", formatMode(info.Mode()), formatMode(targetMode), path)
+	if cfg.dryRun {
+		return nil
+	}
 	return os.Chmod(path, targetMode)
 }
 

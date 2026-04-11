@@ -19,11 +19,12 @@ Rules:
 - directory input is processed recursively
 - symlinks are ignored
 - output is printed only for paths whose permissions actually changed
+- `--dry-run` prints planned changes without applying them
 
 Usage:
 
 ```sh
-reumask <umask> <path>
+reumask [--dry-run] <umask> <path>
 ```
 
 Examples:
@@ -31,6 +32,7 @@ Examples:
 ```sh
 reumask 022 .
 reumask 027 some/file
+reumask --dry-run 022 some/tree
 ```
 
 Build:
