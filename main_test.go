@@ -24,11 +24,11 @@ func TestParseUmaskRejectsInvalidValue(t *testing.T) {
 }
 
 func TestParseArgsDryRun(t *testing.T) {
-	cfg, positional, err := parseArgs([]string{"--dry-run", "022", "path1", "path2"})
+	dryRun, positional, err := parseArgs([]string{"--dry-run", "022", "path1", "path2"})
 	if err != nil {
 		t.Fatalf("parseArgs returned error: %v", err)
 	}
-	if !cfg.dryRun {
+	if !dryRun {
 		t.Fatal("parseArgs did not enable dry-run")
 	}
 	if len(positional) != 3 || positional[0] != "022" || positional[1] != "path1" || positional[2] != "path2" {
@@ -37,8 +37,9 @@ func TestParseArgsDryRun(t *testing.T) {
 }
 
 func TestParseArgsUsageError(t *testing.T) {
-	if _, _, err := parseArgs([]string{"022"}); err == nil || err.Error() != usageText {
-		t.Fatalf("parseArgs returned %v, want %q", err, usageText)
+	want := "usage: reumask [--dry-run] <umask> <path> [<path> ...]"
+	if _, _, err := parseArgs([]string{"022"}); err == nil || err.Error() != want {
+		t.Fatalf("parseArgs returned %v, want %q", err, want)
 	}
 }
 

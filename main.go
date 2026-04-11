@@ -10,16 +10,6 @@ import (
 	"strconv"
 )
 
-const (
-	modeReadWrite = 0o666
-	modeAll       = 0o777
-	usageText     = "usage: reumask [--dry-run] <umask> <path> [<path> ...]"
-)
-
-type config struct {
-	dryRun bool
-}
-
 func main() {
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintf(os.Stderr, "reumask: %v\n", err)
@@ -28,7 +18,7 @@ func main() {
 }
 
 func run(args []string) error {
-	cfg, positional, err := parseArgs(args)
+	dryRun, positional, err := parseArgs(args)
 	if err != nil {
 		return err
 	}
@@ -39,7 +29,7 @@ func run(args []string) error {
 	}
 
 	for _, path := range positional[1:] {
-		if err := runPath(path, umask, cfg); err != nil {
+		if err := runPath(path, umask, dryRun); err != nil {
 			return err
 		}
 	}
@@ -47,24 +37,23 @@ func run(args []string) error {
 	return nil
 }
 
-func parseArgs(args []string) (config, []string, error) {
-	var cfg config
-
+func parseArgs(args []string) (bool, []string, error) {
+	var dryRun bool
 	fs := flag.NewFlagSet("reumask", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	fs.BoolVar(&cfg.dryRun, "dry-run", false, "print changes without applying them")
+	fs.BoolVar(&dryRun, "dry-run", false, "print changes without applying them")
 
 	if err := fs.Parse(args); err != nil {
-		return config{}, nil, err
+		return false, nil, err
 	}
 	if fs.NArg() < 2 {
-		return config{}, nil, errors.New(usageText)
+		return false, nil, errors.New("usage: reumask [--dry-run] <umask> <path> [<path> ...]")
 	}
 
-	return cfg, fs.Args(), nil
+	return dryRun, fs.Args(), nil
 }
 
-func runPath(path string, umask fs.FileMode, cfg config) error {
+func runPath(path string, umask fs.FileMode, dryRun bool) error {
 	info, err := os.Lstat(path)
 	if err != nil {
 		return err
@@ -80,11 +69,15 @@ func runPath(path string, umask fs.FileMode, cfg config) error {
 			if walkErr != nil {
 				return walkErr
 			}
-			return applyUmask(walkPath, d.Type(), umask, cfg)
+			info, err := d.Info()
+			if err != nil {
+				return err
+			}
+			return applyUmask(walkPath, info.Mode(), umask, dryRun)
 		})
 	}
 
-	return applyUmask(path, info.Mode(), umask, cfg)
+	return applyUmask(path, info.Mode(), umask, dryRun)
 }
 
 func parseUmask(raw string) (fs.FileMode, error) {
@@ -99,34 +92,29 @@ func parseUmask(raw string) (fs.FileMode, error) {
 	return fs.FileMode(value), nil
 }
 
-func applyUmask(path string, mode fs.FileMode, umask fs.FileMode, cfg config) error {
+func applyUmask(path string, mode fs.FileMode, umask fs.FileMode, dryRun bool) error {
 	if mode&os.ModeSymlink != 0 {
 		return nil
 	}
 
-	info, err := os.Lstat(path)
-	if err != nil {
-		return err
-	}
-
-	targetMode := remaskMode(info.Mode(), umask)
-	if info.Mode().Perm() == targetMode.Perm() &&
-		info.Mode()&(os.ModeSetuid|os.ModeSetgid|os.ModeSticky) ==
+	targetMode := remaskMode(mode, umask)
+	if mode.Perm() == targetMode.Perm() &&
+		mode&(os.ModeSetuid|os.ModeSetgid|os.ModeSticky) ==
 			targetMode&(os.ModeSetuid|os.ModeSetgid|os.ModeSticky) {
 		return nil
 	}
 
-	fmt.Printf("[%s -> %s] %s\n", formatMode(info.Mode()), formatMode(targetMode), path)
-	if cfg.dryRun {
+	fmt.Printf("[%s -> %s] %s\n", formatMode(mode), formatMode(targetMode), path)
+	if dryRun {
 		return nil
 	}
 	return os.Chmod(path, targetMode)
 }
 
 func remaskMode(current fs.FileMode, umask fs.FileMode) fs.FileMode {
-	base := fs.FileMode(modeReadWrite)
+	base := fs.FileMode(0o666)
 	if current.IsDir() || current.Perm()&0o111 != 0 {
-		base = modeAll
+		base = 0o777
 	}
 
 	special := current & (os.ModeSetuid | os.ModeSetgid | os.ModeSticky)
