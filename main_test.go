@@ -142,6 +142,30 @@ func TestRunAcceptsMultiplePaths(t *testing.T) {
 	assertPerms(t, file2, 0o644)
 }
 
+func TestRunWarnsButDoesNotFailForTopLevelSymlink(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "target")
+	if err := os.WriteFile(target, []byte("data"), 0o600); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	link := filepath.Join(root, "link")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatalf("Symlink failed: %v", err)
+	}
+
+	stderr := captureStderr(t, func() {
+		if err := run([]string{"022", link}); err != nil {
+			t.Fatalf("run returned error: %v", err)
+		}
+	})
+
+	if stderr == "" {
+		t.Fatal("expected warning for top-level symlink")
+	}
+	assertPerms(t, target, 0o600)
+}
+
 func assertPerms(t *testing.T, path string, want os.FileMode) {
 	t.Helper()
 
@@ -157,15 +181,42 @@ func assertPerms(t *testing.T, path string, want os.FileMode) {
 func captureStdout(t *testing.T, fn func()) string {
 	t.Helper()
 
-	original := os.Stdout
 	reader, writer, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("Pipe failed: %v", err)
 	}
 
-	os.Stdout = writer
+	return captureOutput(t, reader, writer, func() (*os.File, func(*os.File)) {
+		original := os.Stdout
+		return original, func(file *os.File) {
+			os.Stdout = file
+		}
+	}, fn)
+}
+
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("Pipe failed: %v", err)
+	}
+
+	return captureOutput(t, reader, writer, func() (*os.File, func(*os.File)) {
+		original := os.Stderr
+		return original, func(file *os.File) {
+			os.Stderr = file
+		}
+	}, fn)
+}
+
+func captureOutput(t *testing.T, reader *os.File, writer *os.File, getStream func() (*os.File, func(*os.File)), fn func()) string {
+	t.Helper()
+
+	original, setStream := getStream()
+	setStream(writer)
 	defer func() {
-		os.Stdout = original
+		setStream(original)
 	}()
 
 	fn()

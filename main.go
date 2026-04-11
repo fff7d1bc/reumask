@@ -71,7 +71,8 @@ func runPath(path string, umask fs.FileMode, cfg config) error {
 	}
 
 	if info.Mode()&os.ModeSymlink != 0 {
-		return errors.New("refusing to chmod symlink")
+		fmt.Fprintf(os.Stderr, "skipping %s: path is a symlink\n", path)
+		return nil
 	}
 
 	if info.IsDir() {
