@@ -24,7 +24,7 @@ Rules:
 Usage:
 
 ```sh
-reumask [--dry-run] <umask> <path>
+reumask [--dry-run] <umask> <path> [<path> ...]
 ```
 
 Examples:
@@ -32,6 +32,7 @@ Examples:
 ```sh
 reumask 022 .
 reumask 027 some/file
+reumask 077 path1 path2 path3
 reumask --dry-run 022 some/tree
 ```
 

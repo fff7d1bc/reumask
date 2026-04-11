@@ -13,7 +13,7 @@ import (
 const (
 	modeReadWrite = 0o666
 	modeAll       = 0o777
-	usageText     = "usage: reumask [--dry-run] <umask> <path>"
+	usageText     = "usage: reumask [--dry-run] <umask> <path> [<path> ...]"
 )
 
 type config struct {
@@ -38,25 +38,13 @@ func run(args []string) error {
 		return err
 	}
 
-	info, err := os.Lstat(positional[1])
-	if err != nil {
-		return err
+	for _, path := range positional[1:] {
+		if err := runPath(path, umask, cfg); err != nil {
+			return err
+		}
 	}
 
-	if info.Mode()&os.ModeSymlink != 0 {
-		return errors.New("refusing to chmod symlink")
-	}
-
-	if info.IsDir() {
-		return filepath.WalkDir(positional[1], func(path string, d fs.DirEntry, walkErr error) error {
-			if walkErr != nil {
-				return walkErr
-			}
-			return applyUmask(path, d.Type(), umask, cfg)
-		})
-	}
-
-	return applyUmask(positional[1], info.Mode(), umask, cfg)
+	return nil
 }
 
 func parseArgs(args []string) (config, []string, error) {
@@ -69,11 +57,33 @@ func parseArgs(args []string) (config, []string, error) {
 	if err := fs.Parse(args); err != nil {
 		return config{}, nil, err
 	}
-	if fs.NArg() != 2 {
+	if fs.NArg() < 2 {
 		return config{}, nil, errors.New(usageText)
 	}
 
 	return cfg, fs.Args(), nil
+}
+
+func runPath(path string, umask fs.FileMode, cfg config) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+
+	if info.Mode()&os.ModeSymlink != 0 {
+		return errors.New("refusing to chmod symlink")
+	}
+
+	if info.IsDir() {
+		return filepath.WalkDir(path, func(walkPath string, d fs.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			return applyUmask(walkPath, d.Type(), umask, cfg)
+		})
+	}
+
+	return applyUmask(path, info.Mode(), umask, cfg)
 }
 
 func parseUmask(raw string) (fs.FileMode, error) {

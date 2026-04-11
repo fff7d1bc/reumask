@@ -24,14 +24,14 @@ func TestParseUmaskRejectsInvalidValue(t *testing.T) {
 }
 
 func TestParseArgsDryRun(t *testing.T) {
-	cfg, positional, err := parseArgs([]string{"--dry-run", "022", "path"})
+	cfg, positional, err := parseArgs([]string{"--dry-run", "022", "path1", "path2"})
 	if err != nil {
 		t.Fatalf("parseArgs returned error: %v", err)
 	}
 	if !cfg.dryRun {
 		t.Fatal("parseArgs did not enable dry-run")
 	}
-	if len(positional) != 2 || positional[0] != "022" || positional[1] != "path" {
+	if len(positional) != 3 || positional[0] != "022" || positional[1] != "path1" || positional[2] != "path2" {
 		t.Fatalf("parseArgs returned unexpected positional args: %#v", positional)
 	}
 }
@@ -120,6 +120,26 @@ func TestRunDryRunDoesNotChangePermissions(t *testing.T) {
 		t.Fatal("expected dry-run to print planned change")
 	}
 	assertPerms(t, file, 0o600)
+}
+
+func TestRunAcceptsMultiplePaths(t *testing.T) {
+	root := t.TempDir()
+	file1 := filepath.Join(root, "file1")
+	file2 := filepath.Join(root, "file2")
+
+	if err := os.WriteFile(file1, []byte("one"), 0o600); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+	if err := os.WriteFile(file2, []byte("two"), 0o600); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	if err := run([]string{"022", file1, file2}); err != nil {
+		t.Fatalf("run returned error: %v", err)
+	}
+
+	assertPerms(t, file1, 0o644)
+	assertPerms(t, file2, 0o644)
 }
 
 func assertPerms(t *testing.T, path string, want os.FileMode) {
